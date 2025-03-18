@@ -59,7 +59,7 @@ If you use this work, please cite:
   title={Adaptive Iterative Feedback Prompting for Obstacle-Aware Path Planning via LLMs},
   author={Masoud Jafaripour, Shadan Golestan, Shotaro Miwa, Yoshihiro Mitsuka, Osmar R. Zaiane},
   year={2025},
-  journal={Preprint}
+  Conference={AAAI LM4Planning Workshop}
 }
 ```
 
@@ -73,4 +73,6 @@ If you use this work, please cite:
 
 🚀 **Star** ⭐ this repo if you find it useful!  
 📧 Feel free to submit issues, PRs, or suggestions.
+
+**this repo is being updating.**
 
