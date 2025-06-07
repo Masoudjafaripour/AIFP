@@ -25,7 +25,10 @@ Planning is a critical component for intelligent agents, especially in **Human-R
 
 ```
 ├── src/                   # Source code for AIFP framework
-│   ├── llmplanner.ipynb         # Core implementation of AIFP
+│   ├── aifp_planner.ipynb              # Core implementation of AIFP
+│   ├── naive_llm_planner.ipynb         # A naive llm planner
+│   ├── astar_planner.py                # A* Planner in the grid version of same 2D domain
+│   ├── rrt_planner.py                  # RRT Planner in the same 2D domain
 ├── results/               # Outputs of path planning trials
 ├── README.md              # This README file
 └── requirements.txt       # Required Python dependencies
