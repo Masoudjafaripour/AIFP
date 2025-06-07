@@ -19,6 +19,8 @@ Planning is a critical component for intelligent agents, especially in **Human-R
 ✅ **Improves success rate by 33.3% compared to naive prompting**  
 ✅ **Fully implemented with OpenAI's GPT-4 API**  
 
+✅ **A star and RRT planners in the same 2D domain**  
+
 ## 📂 Repository Structure
 
 ```
