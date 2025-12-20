@@ -4,7 +4,7 @@ from shapely.geometry import Polygon
 import heapq
 
 # Define grid resolution
-GRID_SIZE = 50  # 50x50 grid
+GRID_SIZE = 40  # 40x40 grid
 X_MIN, X_MAX = -2, 2
 Y_MIN, Y_MAX = -2, 2
 
