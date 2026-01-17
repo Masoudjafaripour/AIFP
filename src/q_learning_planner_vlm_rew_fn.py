@@ -1,11 +1,12 @@
 """
 Q-learning grid planner with polygon obstacles + visualization
-LLM (Qwen-3B) as NUMERICAL reward model (episode-level, cached, fast).
+VLM (Qwen-VL) as NUMERICAL reward model (episode-level, cached, fast).
 
 - No loss of original details
-- LLM loaded ONCE
-- LLM queried ONCE per episode
+- VLM loaded ONCE
+- VLM queried ONCE per episode
 - Reward cached
+- Uses rendered grid image
 """
 
 import numpy as np
@@ -14,89 +15,31 @@ from shapely.geometry import Polygon
 import random
 from tqdm import trange
 from collections import defaultdict
+from PIL import Image, ImageDraw
 
 # ============================================================
-# 0) LLM CONFIG (FAST + SAFE)
+# 0) VLM CONFIG (FAST + SAFE)
 # ============================================================
-USE_LLM_REWARD = True
-QWEN_MODEL = "Qwen/Qwen2.5-3B-Instruct"   # or local path
-LLM_REWARD_CLIP = 50.0
+USE_VLM_REWARD = True
+VLM_MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"   # or local path
+VLM_REWARD_CLIP = 50.0
 
-LLM_PROMPT_TEMPLATE = """You are a reward function for reinforcement learning.
-
-Output a single real number.
-Higher is better.
-
-Guidelines:
-- Reaching the goal is very good
-- Getting closer to the goal is good
-- Revisiting states is bad
-- Wandering is bad
-- Do NOT explain
-- Output ONLY a number
-
-Episode summary:
-{summary}
-"""
+GOAL_TEXT = "the agent reaches the red goal safely without hitting obstacles"
+BASELINE_TEXT = "the agent wanders randomly without a goal"
 
 reward_cache = {}
 
-if USE_LLM_REWARD:
-    from transformers import AutoTokenizer, AutoModelForCausalLM
+if USE_VLM_REWARD:
+    from transformers import AutoProcessor, AutoModelForVision2Seq
     import torch
 
-    tokenizer = AutoTokenizer.from_pretrained(QWEN_MODEL, use_fast=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        QWEN_MODEL,
+    processor = AutoProcessor.from_pretrained(VLM_MODEL)
+    model = AutoModelForVision2Seq.from_pretrained(
+        VLM_MODEL,
         torch_dtype=torch.float16,
         device_map="auto",
     )
     model.eval()
-
-
-def llm_episode_reward(summary: str) -> float:
-    """
-    Cached episode-level LLM reward.
-    """
-    key = hash(summary)
-    if key in reward_cache:
-        return reward_cache[key]
-
-    prompt = LLM_PROMPT_TEMPLATE.format(summary=summary)
-
-    messages = [
-        {"role": "system", "content": "Output only a number."},
-        {"role": "user", "content": prompt},
-    ]
-
-    if hasattr(tokenizer, "apply_chat_template"):
-        text = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-    else:
-        text = "SYSTEM: Output only a number.\nUSER: " + prompt + "\nASSISTANT:"
-
-    inputs = tokenizer(text, return_tensors="pt").to(model.device)
-
-    with torch.no_grad():
-        out = model.generate(
-            **inputs,
-            max_new_tokens=8,
-            do_sample=False,
-            temperature=0.0,
-        )
-
-    raw = tokenizer.decode(out[0], skip_special_tokens=True).strip()
-    token = raw.split()[-1]
-
-    try:
-        r = float(token)
-    except ValueError:
-        r = 0.0
-
-    r = float(np.clip(r, -LLM_REWARD_CLIP, LLM_REWARD_CLIP))
-    reward_cache[key] = r
-    return r
 
 
 # ============================================================
@@ -151,7 +94,95 @@ def valid_actions(state):
 
 
 # ============================================================
-# 2) Q-LEARNING SETUP (UNCHANGED)
+# 2) GRID RENDERING (FOR VLM)
+# ============================================================
+def render_grid_image(agent_state):
+    img_size = 256
+    cell = img_size // GRID_SIZE
+
+    img = Image.new("RGB", (img_size, img_size), "white")
+    draw = ImageDraw.Draw(img)
+
+    # obstacles
+    for o in obstacles:
+        poly = [world_to_grid(x, y) for x, y in o.exterior.coords]
+        poly_px = [(p[0]*cell, p[1]*cell) for p in poly]
+        draw.polygon(poly_px, fill=(160, 160, 160))
+
+    # goal (red)
+    gx, gy = goal_grid
+    draw.rectangle(
+        [gx*cell, gy*cell, (gx+1)*cell, (gy+1)*cell],
+        fill=(255, 0, 0)
+    )
+
+    # agent (blue)
+    ax, ay = agent_state
+    draw.rectangle(
+        [ax*cell, ay*cell, (ax+1)*cell, (ay+1)*cell],
+        fill=(0, 0, 255)
+    )
+
+    return img
+
+
+# ============================================================
+# 3) VLM EPISODE REWARD (NUMERICAL, CACHED) - FIXED
+# ============================================================
+@torch.no_grad()
+def vlm_episode_reward(final_state):
+    img = render_grid_image(final_state)
+    key = hash(img.tobytes())
+
+    if key in reward_cache:
+        return reward_cache[key]
+
+    # Qwen2.5-VL expects messages format with image content
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": img},
+                {"type": "text", "text": "Score how well this image shows the agent reaching the red goal safely. Output only a single real number. Higher is better."}
+            ]
+        }
+    ]
+    
+    # Apply chat template
+    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    
+    inputs = processor(
+        text=[text],
+        images=[img],
+        return_tensors="pt",
+        padding=True
+    ).to(model.device)
+
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=8,
+        do_sample=False,
+    )
+
+    decoded = processor.tokenizer.decode(
+        outputs[0], skip_special_tokens=True
+    ).strip()
+
+    # Extract the last token as the numerical score
+    token = decoded.split()[-1]
+
+    try:
+        reward = float(token)
+    except ValueError:
+        reward = 0.0
+
+    reward = float(np.clip(reward, -VLM_REWARD_CLIP, VLM_REWARD_CLIP))
+    reward_cache[key] = reward
+    return reward
+
+
+# ============================================================
+# 4) Q-LEARNING SETUP (UNCHANGED)
 # ============================================================
 alpha = 0.1
 gamma = 0.95
@@ -179,7 +210,7 @@ def dist_to_goal(s):
 
 
 # ============================================================
-# 3) Q-LEARNING LOOP (EPISODE-LEVEL LLM REWARD)
+# 5) Q-LEARNING LOOP (EPISODE-LEVEL VLM REWARD)
 # ============================================================
 pbar = trange(episodes, desc="Q-learning")
 
@@ -212,34 +243,23 @@ for ep in pbar:
         transitions.append((s, a, reward, s_next))
         s = s_next
 
-    # ---------------- EPISODE LLM REWARD ----------------
-    end_dist = dist_to_goal(s)
-    revisits = sum(v > 1 for v in visit_count.values())
-    reached_goal = (s == goal_grid)
-
-    if USE_LLM_REWARD:
-        summary = f"""
-Start distance: {start_dist:.2f}
-End distance: {end_dist:.2f}
-Steps taken: {len(transitions)}
-Revisited states: {revisits}
-Reached goal: {reached_goal}
-"""
-        R_llm = llm_episode_reward(summary)
+    # ---------------- EPISODE VLM REWARD ----------------
+    if USE_VLM_REWARD:
+        R_vlm = vlm_episode_reward(s)
     else:
-        R_llm = 0.0
+        R_vlm = 0.0
 
-    # Monte-Carlo-style update (stable with noisy rewards)
+    # Monte-Carlo-style update (stable)
     for (s, a, r, s_next) in transitions:
-        target = r + R_llm
+        target = r + R_vlm
         set_Q(s, a, get_Q(s, a) + alpha * (target - get_Q(s, a)))
 
     if ep % 50 == 0:
-        pbar.set_postfix(LLM_R=f"{R_llm:.1f}", cache=len(reward_cache))
+        pbar.set_postfix(VLM_R=f"{R_vlm:.2f}", cache=len(reward_cache))
 
 
 # ============================================================
-# 4) EXTRACT GREEDY PATH (UNCHANGED)
+# 6) EXTRACT GREEDY PATH (UNCHANGED)
 # ============================================================
 path = [start_grid]
 s = start_grid
@@ -253,7 +273,7 @@ for _ in range(max_steps):
 
 
 # ============================================================
-# 5) VISUALIZATION (UNCHANGED)
+# 7) VISUALIZATION (UNCHANGED)
 # ============================================================
 plt.figure(figsize=(6, 6))
 ax = plt.gca()
@@ -270,4 +290,3 @@ ax.plot(path_world[:, 0], path_world[:, 1], c="blue", linewidth=3)
 
 plt.grid(True)
 plt.show()
-
