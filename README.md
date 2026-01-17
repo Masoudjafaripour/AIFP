@@ -81,3 +81,65 @@ If you use this work, please cite:
 
 **this repo is being updating.**
 
+---
+
+## 🖼️ Qualitative Planner Comparisons
+
+The following visualizations compare **LLM-based**, **learning-based**, and **classical planners** under identical start–goal and obstacle configurations.  
+All figures are shown at a **fixed size** with **compact captions** for consistent visual comparison.
+
+### 🤖 LLM-Based and Hybrid Planners
+
+<p align="center">
+  <div style="display:inline-block; text-align:center; margin:8px;">
+    <img src="results/aifp_planner.png" width="260"/>
+    <div><sub><b>AIFP</b>: Adaptive Iterative Feedback Prompting</sub></div>
+  </div>
+</p>
+
+---
+
+### 🧠 Learning-Based Planners
+
+<p align="center">
+  <div style="display:inline-block; text-align:center; margin:8px;">
+    <img src="results/q_learning_planner.png" width="260"/>
+    <div><sub><b>Q-learning</b>: Handcrafted reward</sub></div>
+  </div>
+
+  <div style="display:inline-block; text-align:center; margin:8px;">
+    <img src="results/q_learning_planner_llm_rew_fn.png" width="260"/>
+    <div><sub><b>Q-learning</b>: LLM-designed reward</sub></div>
+  </div>
+</p>
+
+---
+
+### 📐 Classical and Sampling-Based Planners
+
+<p align="center">
+  <div style="display:inline-block; text-align:center; margin:8px;">
+    <img src="results/astar_planner.png" width="260"/>
+    <div><sub><b>A*</b>: Grid-based shortest path</sub></div>
+  </div>
+
+  <div style="display:inline-block; text-align:center; margin:8px;">
+    <img src="results/rrt_planner.png" width="260"/>
+    <div><sub><b>RRT</b>: Sampling-based planner</sub></div>
+  </div>
+
+  <div style="display:inline-block; text-align:center; margin:8px;">
+    <img src="results/mcts_planner.png" width="260"/>
+    <div><sub><b>MCTS</b>: Tree search planner</sub></div>
+  </div>
+</p>
+
+---
+
+### 🔍 Observations
+
+- **AIFP** refines trajectories via iterative feedback and collision checking.
+- **LLM-informed reward learning** biases learned paths toward smoother, goal-directed behavior.
+- **Classical planners** offer strong geometric baselines but lack semantic adaptability.
+
+All planners are evaluated in the same 2D environment with identical obstacle layouts.
